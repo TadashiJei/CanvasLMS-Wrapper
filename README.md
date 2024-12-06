@@ -59,13 +59,13 @@ A powerful Canvas LMS content fetcher and organizer developed by Java Jay Bartol
 
 1. Clone the repository:
    ```bash
-   git clone <repository-url>
-   cd CanvasWrapper
+   git clone https://github.com/TadashiJei/CanvasLMS-Wrapper
+   cd CanvasLMS-Wrapper
    ```
 
 2. Install required dependencies:
    ```bash
-   pip install -r requirements.txt
+   pip3 install -r requirements.txt
    ```
 
 3. Configure your Canvas API credentials:
