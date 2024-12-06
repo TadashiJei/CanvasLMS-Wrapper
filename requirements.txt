@@ -1,0 +1,10 @@
+canvasapi>=3.0.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+urllib3>=2.0.3
+certifi>=2023.5.7
+charset-normalizer>=3.1.0
+idna>=3.4
+pyfiglet>=0.8.post1
+termcolor>=2.3.0
+tqdm>=4.65.0
