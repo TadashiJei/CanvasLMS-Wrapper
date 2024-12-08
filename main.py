@@ -250,6 +250,125 @@ def select_courses():
         
         print(colored("Invalid choice! Please try again.", 'red'))
 
+def download_module_content(module_item, module_dir):
+    """Download content from a module item."""
+    try:
+        if not hasattr(module_item, 'type'):
+            print(colored(f"Skipping item with no type", 'yellow'))
+            return
+
+        # Create sanitized filename based on title or name
+        title = getattr(module_item, 'title', None) or getattr(module_item, 'name', 'unnamed')
+        base_filename = sanitize_filename(title)
+
+        # Only process File type items
+        if module_item.type == 'File':
+            try:
+                # First try to get the download URL directly from the module item
+                download_url = None
+                
+                # Try different attributes that might contain the URL
+                if hasattr(module_item, 'url'):
+                    download_url = module_item.url
+                elif hasattr(module_item, 'html_url'):
+                    download_url = module_item.html_url
+                
+                if download_url:
+                    # Extract file extension from the title or URL
+                    file_ext = ''
+                    if '.' in title:
+                        file_ext = '.' + title.split('.')[-1].lower()
+                    else:
+                        file_ext = os.path.splitext(download_url)[-1].lower()
+                    
+                    allowed_extensions = {
+                        '.pdf', '.doc', '.docx', '.ppt', '.pptx', 
+                        '.xls', '.xlsx', '.jpg', '.jpeg', '.png', 
+                        '.gif', '.mp4', '.mov', '.zip', '.rar'
+                    }
+                    
+                    if file_ext in allowed_extensions:
+                        local_path = os.path.join(module_dir, f"{base_filename}")
+                        if not local_path.lower().endswith(file_ext):
+                            local_path += file_ext
+                            
+                        # Download using requests with authentication
+                        headers = {
+                            'Authorization': f'Bearer {API_KEY}',
+                            'Accept': '*/*'
+                        }
+                        
+                        # First request to get the actual download URL (handle redirects)
+                        session = requests.Session()
+                        response = session.get(
+                            download_url,
+                            headers=headers,
+                            allow_redirects=True
+                        )
+                        response.raise_for_status()
+                        
+                        # Get the final URL after redirects
+                        final_url = response.url
+                        
+                        # Download the file from the final URL
+                        download_response = session.get(
+                            final_url,
+                            headers=headers,
+                            stream=True
+                        )
+                        download_response.raise_for_status()
+                        
+                        # Download with progress bar
+                        total_size = int(download_response.headers.get('content-length', 0))
+                        block_size = 1024  # 1 KB
+                        
+                        with open(local_path, 'wb') as f:
+                            with tqdm(total=total_size, unit='B', unit_scale=True, desc=f"Downloading {os.path.basename(local_path)}") as pbar:
+                                for data in download_response.iter_content(block_size):
+                                    f.write(data)
+                                    pbar.update(len(data))
+                                    
+                        print(colored(f"Downloaded file: {os.path.basename(local_path)}", 'green'))
+                    else:
+                        print(colored(f"Skipping non-document file: {title}", 'yellow'))
+                else:
+                    print(colored(f"No download URL found for: {title}", 'red'))
+                    
+            except Exception as e:
+                print(colored(f"Error downloading {title}: {str(e)}", 'red'))
+
+    except Exception as e:
+        print(colored(f"Error processing module item: {str(e)}", 'red'))
+
+def process_course_modules(course, course_dir):
+    """Process all modules in a course."""
+    try:
+        modules = course.get_modules()
+        for module in modules:
+            print(colored(f"\nProcessing module: {module.name}", 'cyan'))
+            
+            # Create module directory
+            module_dir = os.path.join(course_dir, sanitize_filename(module.name))
+            os.makedirs(module_dir, exist_ok=True)
+            
+            # Get module items
+            try:
+                module_items = module.get_module_items()
+                for item in module_items:
+                    print(colored(f"Processing item: {getattr(item, 'title', 'Untitled')}", 'yellow'))
+                    download_module_content(item, module_dir)
+            except CanvasException as e:
+                if "unauthorized" in str(e).lower():
+                    print(colored(f"No access to items in module {module.name}", 'red'))
+                else:
+                    print(colored(f"Error accessing items in module {module.name}: {str(e)}", 'red'))
+                    
+    except CanvasException as e:
+        if "unauthorized" in str(e).lower():
+            print(colored(f"No access to modules for course {course.name}", 'red'))
+        else:
+            print(colored(f"Error accessing modules for course {course.name}: {str(e)}", 'red'))
+
 def fetch_and_download_data():
     """Main function to fetch and download data."""
     try:
@@ -275,7 +394,13 @@ def fetch_and_download_data():
             # Setup course directory
             course_dir = setup_course_directory(course.name)
             
+            # Process modules first
+            print(colored("\nDownloading course modules...", 'cyan'))
+            process_course_modules(course, course_dir)
+            
+            # Process assignments
             try:
+                print(colored("\nProcessing assignments...", 'cyan'))
                 assignments = course.get_assignments()
                 for assignment in assignments:
                     print(colored(f"\nProcessing assignment: {assignment.name}", 'yellow'))
@@ -299,10 +424,23 @@ def fetch_and_download_data():
                     print(colored(f"No access to assignments for course {course.name}", 'red'))
                 else:
                     print(colored(f"Error accessing assignments for course {course.name}: {str(e)}", 'red'))
+
+            # Send notification when course processing is complete
+            send_notification(f"Course download complete: {course.name}")
                 
     except CanvasException as e:
         print(colored(f"Error: {str(e)}", 'red'))
         print(colored("Please verify your API key and permissions.", 'yellow'))
+
+def send_notification(message):
+    """Send a system notification."""
+    try:
+        # For macOS
+        os.system(f"""
+            osascript -e 'display notification "{message}" with title "Canvas Wrapper"'
+        """)
+    except Exception as e:
+        print(colored(f"Error sending notification: {str(e)}", 'red'))
 
 if __name__ == "__main__":
     fetch_and_download_data()
